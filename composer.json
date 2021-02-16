@@ -1,0 +1,25 @@
+{
+  "name": "whmcs/paguelo-facil-gateway",
+  "description": "Paguelo Facil Gateway Module for the WHMCS Billing Automation Platform",
+  "keywords": [
+    "whmcs",
+    "web host automation platform",
+    "merchant gateway module",
+    "gateway module",
+    "3d secure"
+  ],
+  "homepage": "https://www.paguelofacil.com/",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Rour Dev Inc",
+      "email": "paguelofacil@rour.dev",
+      "homepage": "https://www.rour.dev/",
+      "role": "Developer"
+    }
+  ],
+  "support": {
+    "homepage": "https:\/\/www.paguelofacil.com\/", 
+    "docs_url": "https:\/\/http://developers.paguelofacil.com\/"
+  }
+}

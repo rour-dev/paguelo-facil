@@ -1,0 +1,31 @@
+{
+    "schema": "1.0",
+    "type": "whmcs-gateways",
+    "name": "paguelo-facil-gateway-module",
+    "license": "MIT",
+    "category": "gateway",
+    "description": {
+        "name": "Paguelo Facil",
+        "tagline": "This payment gateway allows you to integrate Paguelo Facil with the WHMCS platform.",
+        "long": "It allows you to set up production and testing keys. It also allows you to set up amount for authorizations when storing payment information as well as recurrent payments.",
+        "features": [
+            "Store payment details",
+            "Capture payment",
+            "Refund transaction",
+            "Admin status message"
+        ]
+    },
+    "logo": {
+        "filename": "logo.png"
+    },
+    "support": {
+        "homepage": "https:\/\/www.paguelofacil.com\/", 
+        "docs_url": "https:\/\/http://developers.paguelofacil.com\/"
+    },
+    "authors": [
+        {
+            "name": "Rour Dev Inc",
+            "homepage": "https:\/\/www.rour.dev\/"
+        }
+    ]
+}
