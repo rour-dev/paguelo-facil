@@ -311,7 +311,7 @@ function paguelofacilgateway_capture($params)
     // Gateway Configuration Parameters
     $testMode = $params['testMode'];
 
-    if ( $testMode ) {
+    if ($testMode) {
         $apiCCLW = $params['apiCCLWTest'];
         $apiToken = $params['apiTokenTest'];
         $apiUrl = 'https://sandbox.paguelofacil.com/';
@@ -348,7 +348,7 @@ function paguelofacilgateway_capture($params)
     $postcode = $params['clientdetails']['postcode'];
     $country = $params['clientdetails']['country'];
     $phone = $params['clientdetails']['phonenumber'];
-    $address = substr($address1.' '.$city.' '.$state.' '.$country,0,100);
+    $address = substr($address1 . ' ' . $city . ' ' . $state . ' ' . $country, 0, 100);
 
     // System Parameters
     $companyName = $params['companyname'];
@@ -363,10 +363,10 @@ function paguelofacilgateway_capture($params)
         // If there is no token yet, it indicates this capture is being
         // attempted using an existing locally stored card. Create a new
         // token and then attempt capture.
-        $urlConfig = $apiUrl.'rest/processTx/AUTH_CAPTURE';
+        $urlConfig = $apiUrl . 'rest/processTx/AUTH_CAPTURE';
 
         $data = array(
-            "cclw" =>  $apiCCLW ,
+            "cclw" => $apiCCLW,
             "amount" => $amount,
             "taxAmount" => $tax,
             "email" => $email,
@@ -374,15 +374,13 @@ function paguelofacilgateway_capture($params)
             "address" => $address,
             "concept" => $description,
             "description" => $description,
-            // "ipCheck" => '100.23.45.51',
-            // "lang" => 'ES', //EN
-            "customFieldValues"  => [["id"=>"idInvoiceId","nameOrLabel"=>"Invoice Id","value"=>$invoiceId],
-                                ["id"=>"idFirstName","nameOrLabel"=>"First Name","value"=>$firstname],
-                                  ["id"=>"idLastName","nameOrLabel"=>"Last Name","value"=>$lastname],
-                                    ["id"=>"idAddress2","nameOrLabel"=>"Adress Line 2","value"=>$address2],
-                                ["id"=>"idPostCode","nameOrLabel"=>"Postal Code","value"=>$postcode],
-                                ["id"=>"idCompanyName","nameOrLabel"=>"Company Name","value"=>$companyName],
-                                ["id"=>"idWhmcsVersion","nameOrLabel"=>"WHMCS Version","value"=>$whmcsVersion]],
+            "customFieldValues" => [["id" => "idInvoiceId", "nameOrLabel" => "Invoice Id", "value" => $invoiceId],
+                ["id" => "idFirstName", "nameOrLabel" => "First Name", "value" => $firstname],
+                ["id" => "idLastName", "nameOrLabel" => "Last Name", "value" => $lastname],
+                ["id" => "idAddress2", "nameOrLabel" => "Adress Line 2", "value" => $address2],
+                ["id" => "idPostCode", "nameOrLabel" => "Postal Code", "value" => $postcode],
+                ["id" => "idCompanyName", "nameOrLabel" => "Company Name", "value" => $companyName],
+                ["id" => "idWhmcsVersion", "nameOrLabel" => "WHMCS Version", "value" => $whmcsVersion]],
             "cardInformation" => array(
                 "cardNumber" => $cardNumber,
                 "expMonth" => substr($cardExpiry, 0, 2),
@@ -396,14 +394,14 @@ function paguelofacilgateway_capture($params)
 
         logModuleCall('Paguelo Facil Gateway', 'Capture Requesting Token', $urlConfig, array(), $data, array());
 
-        $json=json_encode($data);
+        $json = json_encode($data);
 
         $ch = curl_init();
-        curl_setopt($ch,CURLOPT_URL, $urlConfig);
+        curl_setopt($ch, CURLOPT_URL, $urlConfig);
         curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch,CURLOPT_RETURNTRANSFER,true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/json','authorization:'.$apiToken));
-        curl_setopt($ch,CURLOPT_POSTFIELDS,$json);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/json', 'authorization:' . $apiToken));
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $json);
 
         $result = curl_exec($ch);
         $response = json_decode($result, true);
@@ -412,33 +410,136 @@ function paguelofacilgateway_capture($params)
 
         // Perform API call to store the provided card details and generate a token.
         if ($response['success']) {
+            // Check the authStatus to handle insufficient funds
+            if ($response['data']['authStatus'] == 51) {
+                // Handle the case of insufficient funds
+                // Mark the invoice as unpaid or failed, and return an appropriate response
+                return [
+                    'status' => 'error',
+                    'rawdata' => $response,
+                    // You can optionally provide a reason for the failure
+                    'declinereason' => 'INSUFFICIENT FUNDS',
+                ];
+            }
+        
+            // Payment was successful, mark the invoice as paid
+            // You may want to update your WHMCS database here to set the invoice status as paid
+            // For example, you can use WHMCS functions like update_query to update the invoice status
+            // Update the invoice status as paid and save the transaction ID
+            update_query(
+                'tblinvoices',
+                ['status' => 'Paid', 'transid' => $response['data']['codOper']],
+                ['id' => $invoiceId]
+            );
+        
             return [
-                // 'success' if successful, otherwise 'declined', 'error' for failure
                 'status' => 'success',
-                // The unique transaction id for the payment
                 'transid' => $response['data']['codOper'],
-                // Optional fee amount for the transaction
-                // 'fee' => $response['fee'],
-                // Return only if the token has updated or changed
-                'gatewayid' => $response['data']['codOper'],
-                // Data to be recorded in the gateway log - can be a string or array
                 'rawdata' => $response,
             ];
         } else {
+            // Handle other failure cases
+            // Check for specific decline reasons and provide appropriate error messages
+            $declinereason = '';
+        
+            switch ($response['data']['authStatus']) {
+                case '01':
+                    $declinereason = 'Referir al banco emisor.';
+                    break;
+                case '04':
+                    $declinereason = 'Recoger la tarjeta.';
+                    break;
+                case '05':
+                    $declinereason = 'Retirar tarjeta, condición especial (cuenta fraudulenta).';
+                    break;
+                case '12':
+                    $declinereason = 'Transacción inválida.';
+                    break;
+                case '13':
+                    $declinereason = 'Monto inválido.';
+                    break;
+                case '14':
+                    $declinereason = 'Número de tarjeta inválido.';
+                    break;
+                case '16':
+                    $declinereason = 'No Emisor.';
+                    break;
+                case '30':
+                    $declinereason = 'Error de formato.';
+                    break;
+                case '34':
+                    $declinereason = 'Sospecha de fraude.';
+                    break;
+                case '36':
+                    $declinereason = 'Tarjeta restringida.';
+                    break;
+                case '51':
+                    $declinereason = 'Fondos insuficientes.';
+                    break;
+                case '54':
+                    $declinereason = 'Tarjeta expirada.';
+                    break;
+                case '57':
+                    $declinereason = 'Función no permitida para el titular de la tarjeta.';
+                    break;
+                case '58':
+                    $declinereason = 'Función no permitida al terminal.';
+                    break;
+                case '62':
+                    $declinereason = 'Tarjeta restringida.';
+                    break;
+                case '63':
+                    $declinereason = 'Violación de seguridad.';
+                    break;
+                case '76':
+                    $declinereason = 'Sin acción realizada.';
+                    break;
+                case '79':
+                    $declinereason = 'La cuenta no existe.';
+                    break;
+                case '91':
+                    $declinereason = 'Emisor de la tarjeta no disponible.';
+                    break;
+                case '93':
+                    $declinereason = 'No se puede completar la transacción.';
+                    break;
+                case '96':
+                    $declinereason = 'Error del sistema.';
+                    break;
+                case '41':
+                    $declinereason = 'Tarjeta robada (cuenta fraudulenta).';
+                    break;
+                case '43':
+                    $declinereason = 'Tarjeta robada (cuenta fraudulenta).';
+                    break;
+                case 'EB':
+                    $declinereason = 'Error de verificación.';
+                    break;
+                case 'N7':
+                    $declinereason = 'Código de seguridad erróneo.';
+                    break;
+                // Add more cases for other specific decline reasons as needed
+                // ...
+        
+                default:
+                    // If the decline reason is not one of the specified cases, use a generic error message
+                    $declinereason = 'Payment declined';
+                    break;
+            }
+        
             return [
-                // 'success' if successful, otherwise 'error' for failure
                 'status' => 'error',
-                // Data to be recorded in the gateway log - can be a string or array
                 'rawdata' => $response,
+                'declinereason' => $declinereason,
             ];
         }
     }
 
     logModuleCall('Paguelo Facil Gateway', 'Capture Using Stored Token', array(), array(), array(), array());
-    
-    $urlConfig = $apiUrl.'rest/processTx/RECURRENT';
+
+    $urlConfig = $apiUrl . 'rest/processTx/RECURRENT';
     $data = array(
-        "cclw" =>  $apiCCLW ,
+        "cclw" => $apiCCLW,
         "amount" => $amount,
         "taxAmount" => $tax,
         "email" => $email,
@@ -447,60 +548,59 @@ function paguelofacilgateway_capture($params)
         "concept" => $description,
         "description" => $description,
         "codOper" => $remoteGatewayToken,
-        // "ipCheck" => $ip,
-        // "lang" => 'ES', //EN
-        // "additionalData"=> ["sessionKount": "123as777dfsdf898"],
-        "customFieldValues"  => [["id"=>"idInvoiceId","nameOrLabel"=>"Invoice Id","value"=>$invoiceId],
-                                ["id"=>"idFirstName","nameOrLabel"=>"First Name","value"=>$firstname],
-                                  ["id"=>"idLastName","nameOrLabel"=>"Last Name","value"=>$lastname],
-                                    ["id"=>"idAddress2","nameOrLabel"=>"Adress Line 2","value"=>$address2],
-                                ["id"=>"idPostCode","nameOrLabel"=>"Postal Code","value"=>$postcode],
-                                ["id"=>"idCompanyName","nameOrLabel"=>"Company Name","value"=>$companyName],
-                                ["id"=>"idWhmcsVersion","nameOrLabel"=>"WHMCS Version","value"=>$whmcsVersion]],
+        "customFieldValues" => [["id" => "idInvoiceId", "nameOrLabel" => "Invoice Id", "value" => $invoiceId],
+            ["id" => "idFirstName", "nameOrLabel" => "First Name", "value" => $firstname],
+            ["id" => "idLastName", "nameOrLabel" => "Last Name", "value" => $lastname],
+            ["id" => "idAddress2", "nameOrLabel" => "Adress Line 2", "value" => $address2],
+            ["id" => "idPostCode", "nameOrLabel" => "Postal Code", "value" => $postcode],
+            ["id" => "idCompanyName", "nameOrLabel" => "Company Name", "value" => $companyName],
+            ["id" => "idWhmcsVersion", "nameOrLabel" => "WHMCS Version", "value" => $whmcsVersion]],
     );
 
     logModuleCall('Paguelo Facil Gateway', 'Capture Using Stored Token', $urlConfig, array(), $data, array());
-    
-    $json=json_encode($data);
+
+    $json = json_encode($data);
 
     $ch = curl_init();
-    curl_setopt($ch,CURLOPT_URL, $urlConfig);
+    curl_setopt($ch, CURLOPT_URL, $urlConfig);
     curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch,CURLOPT_RETURNTRANSFER,true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/json','authorization:'.$apiToken));
-    curl_setopt($ch,CURLOPT_POSTFIELDS,$json);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/json', 'authorization:' . $apiToken));
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $json);
 
     $result = curl_exec($ch);
     $response = json_decode($result, true);
 
+    logModuleCall('Paguelo Facil Gateway', 'Capture Using Stored Token End', $data, array(), $result, array());
+
     // Perform API call to initiate capture.
     // Sample response data:
-    logModuleCall('Paguelo Facil Gateway', 'Capture Using Stored Token End', $data, array(), $result, array());
-    
     if ($response['success']) {
+        // Check the authStatus to handle insufficient funds
+        if ($response['data']['authStatus'] == 51) {
+            // Handle the case of insufficient funds
+            // Mark the invoice as unpaid or failed, and return an appropriate response
+            return [
+                'status' => 'error',
+                'rawdata' => $response,
+                // You can optionally provide a reason for the failure
+                'declinereason' => 'INSUFFICIENT FUNDS',
+            ];
+        }
+
         return [
-            // 'success' if successful, otherwise 'declined', 'error' for failure
             'status' => 'success',
-            // The unique transaction id for the payment
             'transid' => $response['data']['codOper'],
-            // Optional fee amount for the transaction
-            // 'fee' => $response['fee'],
-            // Return only if the token has updated or changed
-            // 'gatewayid' => $response['data']['codOper'],
-            // Data to be recorded in the gateway log - can be a string or array
+            'rawdata' => $response,
+        ];
+    } else {
+        return [
+            'status' => 'error',
             'rawdata' => $response,
         ];
     }
-
-    return [
-        // 'success' if successful, otherwise 'declined', 'error' for failure
-        'status' => 'declined',
-        // For declines, a decline reason can optionally be returned
-        // 'declinereason' => $response['decline_reason'],
-        // Data to be recorded in the gateway log - can be a string or array
-        'rawdata' => $response,
-    ];
 }
+
 
 /**
  * Refund transaction.
